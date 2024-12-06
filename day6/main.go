@@ -27,9 +27,10 @@ func main() {
 		board = append(board, []byte(text))
 	}
 
-	blockCandidates, _ := traverse(board, Pos{-1, -1})
-	fmt.Println("Block blockCandidates", len(blockCandidates))
+	startPos, _ := findStartPos(board)
+	blockCandidates, _ := traverse(board, startPos, Pos{-1, -1})
 
+	fmt.Println("Block blockCandidates", len(blockCandidates))
 	// for candidate := range blockCandidates {
 	// 	testSingleThreaded(board, candidate)
 	// }
@@ -37,23 +38,23 @@ func main() {
 	var wg sync.WaitGroup
 	for candidate := range blockCandidates {
 		wg.Add(1)
-		go copyAndTest(board, candidate, &wg)
+		go copyAndTest(board, startPos, candidate, &wg)
 	}
 
 	wg.Wait()
 	fmt.Println("Loop count", count.Load())
 }
 
-func testSingleThreaded(board [][]byte, candidate Pos) {
-	if _, loop := traverse(board, candidate); loop {
+func testSingleThreaded(board [][]byte, startPos Pos, candidate Pos) {
+	if _, loop := traverse(board, startPos, candidate); loop {
 		count.Add(1)
 		// fmt.Println("Loop if block", candidate)
 	}
 }
 
-func copyAndTest(board [][]byte, candidate Pos, wg *sync.WaitGroup) {
+func copyAndTest(board [][]byte, startPos Pos, candidate Pos, wg *sync.WaitGroup) {
 	defer wg.Done()
-	if _, loop := traverse(board, candidate); loop {
+	if _, loop := traverse(board, startPos, candidate); loop {
 		count.Add(1)
 		// fmt.Println("Loop if block", candidate)
 	}
@@ -97,18 +98,14 @@ func findStartPos(grid [][]byte) (Pos, bool) {
 
 var DIFFS = []Pos{{-1, 0}, {0, 1}, {1, 0}, {0, -1}}
 
-func traverse(grid [][]byte, banned Pos) (map[Pos]struct{}, bool) {
+func traverse(grid [][]byte, startPos Pos, banned Pos) (map[Pos]struct{}, bool) {
 	memo := make([][]int, len(grid))
 	for i := range memo {
 		memo[i] = make([]int, len(grid[0]))
 	}
 
 	blockSet := make(map[Pos]struct{}, 1000)
-	pos, ok := findStartPos(grid)
-	if !ok {
-		return nil, false
-	}
-
+	pos := startPos
 	d := 0
 	for pos.r >= 0 && pos.r < len(grid) && pos.c >= 0 && pos.c < len(grid[0]) {
 		if ((memo[pos.r][pos.c] >> d) & 1) > 0 {
