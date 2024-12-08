@@ -6,6 +6,8 @@ import (
 	"fmt"
 	"os"
 	"slices"
+	"sync"
+	"time"
 )
 
 type Pos struct {
@@ -13,6 +15,10 @@ type Pos struct {
 }
 
 func main() {
+	t := time.Now()
+	defer func() {
+		fmt.Println("Time consumed", time.Since(t))
+	}()
 	// f, _ := os.Open("example.txt")
 	f, _ := os.Open("input.txt")
 	scanner := bufio.NewScanner(f)
@@ -45,48 +51,81 @@ func main() {
 		return cmp.Compare(k1.r, k2.r)
 	})
 
-	fmt.Println(keys)
+	// fmt.Println(keys)
 	fmt.Println(len(antinodes))
+}
+
+type Antinodes struct {
+	nodes map[Pos]struct{}
+	mtx   sync.Mutex
+}
+
+func NewAntinodes() Antinodes {
+	return Antinodes{
+		nodes: make(map[Pos]struct{}, 100),
+	}
+}
+
+func scanRow(row []Pos, antinodes *Antinodes, wg *sync.WaitGroup, board []string) {
+	defer wg.Done()
+	for i := 0; i < len(row); i++ {
+		for j := i + 1; j < len(row); j++ {
+			p1 := row[i]
+			p2 := row[j]
+
+			func() {
+				antinodes.mtx.Lock()
+				defer antinodes.mtx.Unlock()
+				antinodes.nodes[p1] = struct{}{}
+				antinodes.nodes[p2] = struct{}{}
+			}()
+
+			diff := Pos{p1.r - p2.r, p1.c - p2.c}
+			// p2 - diff
+			n := 1
+			for {
+				p3 := Pos{p2.r - n*diff.r, p2.c - n*diff.c}
+				if p3.r >= 0 && p3.c >= 0 && p3.r < len(board) && p3.c < len(board[0]) {
+					func() {
+						antinodes.mtx.Lock()
+						defer antinodes.mtx.Unlock()
+						antinodes.nodes[p3] = struct{}{}
+					}()
+				} else {
+					break
+				}
+				n++
+			}
+			n = 1
+			// p1 + diff
+			for {
+				p3 := Pos{p1.r + n*diff.r, p1.c + n*diff.c}
+				if p3.r >= 0 && p3.c >= 0 && p3.r < len(board) && p3.c < len(board[0]) {
+					func() {
+						antinodes.mtx.Lock()
+						defer antinodes.mtx.Unlock()
+						antinodes.nodes[p3] = struct{}{}
+					}()
+				} else {
+					break
+				}
+				n++
+			}
+		}
+	}
 }
 
 // part 2
 func getAntinodes(positions map[byte][]Pos, board []string) map[Pos]struct{} {
-	antinodes := make(map[Pos]struct{}, 100)
-	for _, row := range positions {
-		for i := 0; i < len(row); i++ {
-			for j := i + 1; j < len(row); j++ {
-				p1 := row[i]
-				p2 := row[j]
-				antinodes[p1] = struct{}{}
-				antinodes[p2] = struct{}{}
-				diff := Pos{p1.r - p2.r, p1.c - p2.c}
-				// p2 - diff
-				n := 1
-				for {
-					p3 := Pos{p2.r - n*diff.r, p2.c - n*diff.c}
-					if p3.r >= 0 && p3.c >= 0 && p3.r < len(board) && p3.c < len(board[0]) {
-						antinodes[p3] = struct{}{}
-					} else {
-						break
-					}
-					n++
-				}
-				n = 1
-				// p1 + diff
-				for {
-					p3 := Pos{p1.r + n*diff.r, p1.c + n*diff.c}
-					if p3.r >= 0 && p3.c >= 0 && p3.r < len(board) && p3.c < len(board[0]) {
-						antinodes[p3] = struct{}{}
-					} else {
-						break
-					}
-					n++
-				}
+	antinodes := NewAntinodes()
 
-			}
-		}
+	var wg sync.WaitGroup
+	for _, row := range positions {
+		wg.Add(1)
+		go scanRow(row, &antinodes, &wg, board)
 	}
-	return antinodes
+	wg.Wait()
+	return antinodes.nodes
 }
 
 // part 1
